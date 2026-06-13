@@ -13,10 +13,12 @@ import json
 import os
 import sys
 import time
+import threading
+import uuid
 from pathlib import Path
 from threading import Lock
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, render_template, request, send_file, url_for
 
 # 将当前目录加入 path，确保能 import 主脚本
 sys.path.insert(0, str(Path(__file__).parent))
@@ -43,6 +45,10 @@ app = Flask(__name__)
 
 # 全局锁：防止并发请求同时操作 TOKEN / 抓取
 _operation_lock = Lock()
+
+# SSE 扫码登录会话管理
+_scan_sessions: dict[str, dict] = {}
+_scan_lock = Lock()
 
 
 # ──────────────────────────── 辅助函数 ────────────────────────────
@@ -83,6 +89,74 @@ def _check_token() -> tuple[bool, str]:
         return False, "TOKEN 已失效，请重新登录"
     except Exception as e:
         return False, f"检查失败: {e}"
+
+
+def _subscribe_sse(session_id: str, config: dict, secret: dict):
+    """后台线程：连接 CAS SSE，监听扫码状态。"""
+    import requests as sse_requests
+    s = sse_requests.Session()
+    s.headers.update({
+        "User-Agent": config.get("user_agent") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://cas.gdust.edu.cn/cas/",
+        "Origin": "https://cas.gdust.edu.cn",
+    })
+    try:
+        resp = s.get(f"{CAS_API}/sse/subscribe", stream=True, timeout=90)
+        resp.raise_for_status()
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            # SSE 格式: "event: XXX" 或 "data: XXX"
+            if line.startswith("event:"):
+                with _scan_lock:
+                    if session_id in _scan_sessions:
+                        _scan_sessions[session_id]["last_event"] = line.split(":", 1)[1].strip()
+            elif line.startswith("data:"):
+                data = line.split(":", 1)[1].strip()
+                evt = ""
+                with _scan_lock:
+                    if session_id in _scan_sessions:
+                        evt = _scan_sessions[session_id].get("last_event", "")
+
+                if evt == "HELLO":
+                    # clientId
+                    with _scan_lock:
+                        if session_id in _scan_sessions:
+                            _scan_sessions[session_id]["client_id"] = data
+                            _scan_sessions[session_id]["status"] = "waiting_scan"
+                elif evt == "SUCCESS":
+                    # 扫码成功，等 STGC
+                    with _scan_lock:
+                        if session_id in _scan_sessions:
+                            _scan_sessions[session_id]["status"] = "scanned"
+                elif evt == "STGC":
+                    # 拿到 TGC！
+                    with _scan_lock:
+                        if session_id in _scan_sessions:
+                            _scan_sessions[session_id]["status"] = "success"
+                            _scan_sessions[session_id]["tgc"] = data
+                    # 自动换 TOKEN
+                    with _operation_lock:
+                        try:
+                            token = exchange_castgc_for_token(secret, config, data)
+                            with _scan_lock:
+                                if session_id in _scan_sessions:
+                                    _scan_sessions[session_id]["token"] = token
+                        except Exception as e:
+                            with _scan_lock:
+                                if session_id in _scan_sessions:
+                                    _scan_sessions[session_id]["token_error"] = str(e)
+                elif evt == "NEED_TO_BIND":
+                    # 需要钉钉绑定
+                    with _scan_lock:
+                        if session_id in _scan_sessions:
+                            _scan_sessions[session_id]["status"] = "need_bind"
+                            _scan_sessions[session_id]["union_id"] = data
+    except Exception as e:
+        with _scan_lock:
+            if session_id in _scan_sessions:
+                _scan_sessions[session_id]["status"] = "error"
+                _scan_sessions[session_id]["error"] = str(e)
 
 
 # ──────────────────────────── 页面路由 ────────────────────────────
@@ -204,7 +278,7 @@ def api_set_token():
 
 @app.route("/api/wechat-login", methods=["POST"])
 def api_wechat_login():
-    """用微信扫码拿到的 TGC 换取 portal TOKEN。"""
+    """用微信扫码拿到的 TGC 换取 portal TOKEN（手动粘贴 TGC 模式）。"""
     with _operation_lock:
         castgc = request.json.get("castgc", "").strip()
         if not castgc:
@@ -213,9 +287,82 @@ def api_wechat_login():
             secret = load_secret()
             config = load_config()
             token = exchange_castgc_for_token(secret, config, castgc)
-            return jsonify({"ok": True, "message": f"微信登录成功！TOKEN: {token[:16]}..."})
+            return jsonify({"ok": True, "message": f"登录成功！TOKEN: {token[:16]}..."})
         except Exception as e:
             return jsonify({"ok": False, "message": f"登录失败: {e}"})
+
+
+@app.route("/api/scan-login/start", methods=["POST"])
+def api_scan_login_start():
+    """开始扫码登录：连 CAS SSE，返回二维码 URL。"""
+    with _scan_lock:
+        session_id = uuid.uuid4().hex[:16]
+        _scan_sessions[session_id] = {
+            "status": "connecting",
+            "client_id": None,
+            "tgc": None,
+            "token": None,
+            "token_error": None,
+            "error": None,
+            "created_at": time.time(),
+        }
+
+    secret = load_secret()
+    config = load_config()
+    th = threading.Thread(
+        target=_subscribe_sse,
+        args=(session_id, config, secret),
+        daemon=True,
+    )
+    th.start()
+
+    # 等 HELLO 事件（最多等 5 秒）
+    for _ in range(25):
+        time.sleep(0.2)
+        with _scan_lock:
+            ses = _scan_sessions.get(session_id)
+            if ses and ses.get("client_id"):
+                qr_url = f"https://cas.gdust.edu.cn/cas/mobieAuth?clientId={ses['client_id']}"
+                return jsonify({
+                    "ok": True,
+                    "session_id": session_id,
+                    "qr_url": qr_url,
+                    "message": "二维码已生成，请用钉钉或微信扫码",
+                })
+            if ses and ses.get("status") == "error":
+                return jsonify({"ok": False, "message": f"SSE 连接失败: {ses.get('error')}"})
+
+    return jsonify({"ok": False, "message": "SSE 连接超时，请重试"})
+
+
+@app.route("/api/scan-login/check/<session_id>")
+def api_scan_login_check(session_id: str):
+    """轮询扫码登录状态。"""
+    with _scan_lock:
+        ses = _scan_sessions.get(session_id)
+        if not ses:
+            return jsonify({"ok": False, "message": "会话不存在"})
+
+        status = ses.get("status")
+        if status == "success" and ses.get("token"):
+            token = ses.pop("token")
+            return jsonify({"ok": True, "status": "success", "message": f"登录成功！TOKEN: {token[:16]}..."})
+        if status == "success" and ses.get("token_error"):
+            err = ses.pop("token_error")
+            return jsonify({"ok": True, "status": "success", "message": "扫码成功，但换 TOKEN 失败", "error": err})
+        if status == "success":
+            return jsonify({"ok": True, "status": "scanned", "message": "扫码成功，正在获取 TOKEN..."})
+        if status == "need_bind":
+            bind_url = f"https://cas.gdust.edu.cn/cas/mobieDDBind?clientId={ses['client_id']}&unionID={ses.get('union_id', '')}"
+            return jsonify({"ok": True, "status": "need_bind", "message": "需要绑定钉钉账号", "bind_url": bind_url})
+        if status == "error":
+            err = ses.get("error", "未知错误")
+            return jsonify({"ok": False, "status": "error", "message": f"连接失败: {err}"})
+        if status == "waiting_scan":
+            return jsonify({"ok": True, "status": "waiting_scan", "message": "等待扫码..."})
+        if status == "scanned":
+            return jsonify({"ok": True, "status": "scanned", "message": "已扫码，正在确认..."})
+        return jsonify({"ok": True, "status": status, "message": f"当前状态: {status}"})
 
 
 @app.route("/api/fetch", methods=["POST"])
