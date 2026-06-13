@@ -188,7 +188,12 @@ def _handle_sse_event(session_id: str, evt: str, data: str, secret: dict, config
         with _operation_lock:
             try:
                 token = exchange_castgc_for_token(secret, config, tgc)
-                print(f"[SSE] Token exchange OK", flush=True)
+                # 持久化 TOKEN 到 secrets.json
+                new_secret = dict(load_secret())
+                new_secret["portal_token"] = token
+                new_secret["updated_at"] = int(time.time())
+                save_secret(new_secret)
+                print(f"[SSE] Token exchange OK, saved to secrets.json", flush=True)
             except Exception as e:
                 token_error = str(e)
                 print(f"[SSE] Token exchange failed: {e}", flush=True)
