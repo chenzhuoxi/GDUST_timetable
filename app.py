@@ -125,17 +125,22 @@ def _subscribe_sse(session_id: str, config: dict, secret: dict):
         sse_url = f"{cas_base}/cas-api/sse/subscribe"
         resp = s.get(sse_url, stream=True, timeout=120)
         resp.raise_for_status()
+        print(f"[SSE] Connected to {sse_url}, status={resp.status_code}", flush=True)
         current_event = None
         data_buffer: list[str] = []
         for line in resp.iter_lines(decode_unicode=True):
             if line is None:
                 continue
+            # 打印每一行，方便调试
+            print(f"[SSE RAW] {line!r}", flush=True)
             if line == "" or line.startswith(":"):
                 # 空行 = 事件结束，处理积攒的 data
                 if data_buffer and current_event:
                     data_str = "\n".join(data_buffer)
+                    print(f"[SSE EVENT] event={current_event!r} data={data_str[:200]!r}", flush=True)
                     _handle_sse_event(session_id, current_event, data_str, secret, config)
                 data_buffer = []
+                current_event = None
                 continue
             if line.startswith("event:"):
                 current_event = line[6:].strip()
