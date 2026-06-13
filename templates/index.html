@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GDUST 课表抓取工具</title>
+<style>
+  :root {
+    --bg: #f5f5f7;
+    --card: #fff;
+    --primary: #0071e3;
+    --primary-hover: #0077ed;
+    --success: #34c759;
+    --danger: #ff3b30;
+    --warning: #ff9500;
+    --text: #1d1d1f;
+    --text-secondary: #86868b;
+    --border: #d2d2d7;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 24px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: var(--text-secondary); font-size: 15px; margin-bottom: 24px; }
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .card h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .step-badge.done { background: var(--success); }
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus { border-color: var(--primary); }
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .form-row.tri { grid-template-columns: 1fr 1fr 1fr; }
+  .form-group { margin-bottom: 12px; }
+  button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-success:hover:not(:disabled) { background: #2db84d; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-outline {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--primary);
+  }
+  .btn-outline:hover:not(:disabled) { background: var(--primary); color: #fff; }
+  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .status-bar {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot-green { background: var(--success); }
+  .dot-red { background: var(--danger); }
+  .dot-yellow { background: var(--warning); }
+  .msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-top: 8px;
+    display: none;
+  }
+  .msg.show { display: block; }
+  .msg-success { background: #e8f8ec; color: #1a7d2e; }
+  .msg-error { background: #fde8e7; color: #c41a1a; }
+  .msg-info { background: #e8f0fd; color: #1a56a0; }
+  .captcha-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .captcha-area img {
+    height: 40px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .captcha-area input { max-width: 160px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin-top: 12px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  tr:hover td { background: #f9f9fb; }
+  .week-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .week-tab {
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .week-tab:hover { border-color: var(--primary); color: var(--primary); }
+  .week-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 40px 20px;
+    font-size: 15px;
+  }
+  .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner-dark { border-color: var(--border); border-top-color: var(--primary); }
+</style>
+</head>
+<body>
+
+<h1>🎓 GDUST 课表抓取工具</h1>
+<p class="subtitle">广东科技学院课表数据抓取 · Web 版</p>
+
+<!-- 状态栏 -->
+<div class="card" id="status-card">
+  <div class="status-bar">
+    <div class="status-item">
+      <span class="dot" id="dot-config"></span>
+      <span id="txt-config">配置检测中…</span>
+    </div>
+    <div class="status-item">
+      <span class="dot" id="dot-creds"></span>
+      <span id="txt-creds">账号检测中…</span>
+    </div>
+    <div class="status-item">
+      <span class="dot" id="dot-token"></span>
+      <span id="txt-token">TOKEN 检测中…</span>
+    </div>
+    <div class="status-item">
+      <span>📅 当前教学周：<strong id="txt-week">-</strong></span>
+    </div>
+  </div>
+</div>
+
+<!-- Step 1: 配置 -->
+<div class="card">
+  <h2><span class="step-badge" id="badge-1">1</span> 配置信息</h2>
+  <div class="form-row">
+    <div class="form-group">
+      <label for="year">年份</label>
+      <input type="text" id="year" value="2025">
+    </div>
+    <div class="form-group">
+      <label for="semester">学期</label>
+      <input type="text" id="semester" value="12">
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label for="week1_monday">学期第一周周一日期</label>
+      <input type="text" id="week1_monday" value="2026-03-09">
+    </div>
+    <div class="form-group">
+      <label for="network_mode">网络模式</label>
+      <select id="network_mode" style="width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:15px; background:#fff; outline:none;">
+        <option value="campus">校内直连（校园网）</option>
+        <option value="webvpn">校外 WebVPN（外网）</option>
+      </select>
+    </div>
+  </div>
+  <button class="btn-outline" onclick="saveConfig()">💾 保存配置</button>
+  <div class="msg" id="msg-config"></div>
+</div>
+
+<!-- Step 2: 登录 -->
+<div class="card">
+  <h2><span class="step-badge" id="badge-2">2</span> 校园账号登录</h2>
+  <div class="form-row">
+    <div class="form-group">
+      <label for="username">校园账号（学号）</label>
+      <input type="text" id="username" placeholder="学号">
+    </div>
+    <div class="form-group">
+      <label for="password">密码</label>
+      <input type="password" id="password" placeholder="校园门户密码">
+    </div>
+  </div>
+  <div class="btn-group">
+    <button class="btn-primary" onclick="saveCredentials()">💾 保存账号密码</button>
+  </div>
+
+  <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+    <label>手动验证码登录</label>
+    <div class="captcha-area" id="captcha-area" style="display:none;">
+      <img id="captcha-img" src="" alt="验证码">
+      <input type="text" id="captcha-code" placeholder="输入验证码" maxlength="6">
+      <button class="btn-primary" onclick="submitCaptcha()">提交</button>
+    </div>
+    <button class="btn-outline" onclick="getCaptcha()" id="btn-captcha" style="margin-top:8px;">🔤 获取验证码</button>
+  </div>
+
+  <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+    <label>手动粘贴 TOKEN</label>
+    <div style="display:flex; gap:8px;">
+      <input type="text" id="manual-token" placeholder="从浏览器 DevTools 抓取的 TOKEN" style="flex:1;">
+      <button class="btn-outline" onclick="setManualToken()">设置</button>
+    </div>
+  </div>
+  <div class="msg" id="msg-login"></div>
+</div>
+
+<!-- Step 3: 抓取 -->
+<div class="card">
+  <h2><span class="step-badge" id="badge-3">3</span> 抓取课表</h2>
+  <div class="btn-group">
+    <button class="btn-success" onclick="fetchTimetable(false)" id="btn-fetch-week">📅 抓取当前周</button>
+    <button class="btn-primary" onclick="fetchTimetable(true)" id="btn-fetch-all">📚 抓取全学期（20 周）</button>
+    <button class="btn-outline" onclick="fetchAndExport()" id="btn-export-all">📦 一键导出整学期 JSON</button>
+  </div>
+  <div class="form-group" style="margin-top:12px;">
+    <label for="specific-week">指定周数</label>
+    <div style="display:flex; gap:8px;">
+      <input type="text" id="specific-week" placeholder="1-20" style="max-width:120px;">
+      <button class="btn-outline" onclick="fetchSpecificWeek()">抓取指定周</button>
+    </div>
+  </div>
+  <div class="msg" id="msg-fetch"></div>
+</div>
+
+<!-- Step 4: 结果 -->
+<div class="card">
+  <h2>📋 课表数据</h2>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div class="week-tabs" id="week-tabs"></div>
+    <button class="btn-outline" onclick="downloadJSON()" id="btn-download" style="display:none;">⬇️ 下载 JSON</button>
+  </div>
+  <div id="timetable-view">
+    <div class="empty-state" id="empty-state">暂无数据，请先抓取课表</div>
+    <table id="timetable-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>日期</th>
+          <th>课程</th>
+          <th>节次</th>
+          <th>教室</th>
+          <th>老师</th>
+        </tr>
+      </thead>
+      <tbody id="timetable-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ─── 状态刷新 ───
+async function refreshStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const s = await r.json();
+
+    setDot('dot-config', s.year && s.semester && s.week1_monday);
+    setText('txt-config', s.year ? '已配置' : '未配置');
+    if (s.year && s.week1_monday) document.getElementById('badge-1').classList.add('done');
+
+    setDot('dot-creds', s.has_credentials);
+    setText('txt-creds', s.has_credentials ? '已保存' : '未保存');
+    if (s.has_credentials) document.getElementById('badge-2').classList.add('done');
+
+    setDot('dot-token', s.token_ok, s.has_token);
+    setText('txt-token', s.token_msg || '无 TOKEN');
+    if (s.token_ok) document.getElementById('badge-3').classList.add('done');
+
+    document.getElementById('txt-week').textContent = s.current_week || '-';
+
+    // 填充表单
+    if (s.year) document.getElementById('year').value = s.year;
+    if (s.semester) document.getElementById('semester').value = s.semester;
+    if (s.week1_monday) document.getElementById('week1_monday').value = s.week1_monday;
+    if (s.network_mode) document.getElementById('network_mode').value = s.network_mode;
+  } catch(e) {
+    console.error('Status refresh failed:', e);
+  }
+}
+
+function setDot(id, ok, has) {
+  const el = document.getElementById(id);
+  el.className = 'dot ' + (ok ? 'dot-green' : (has ? 'dot-yellow' : 'dot-red'));
+}
+function setText(id, text) { document.getElementById(id).textContent = text; }
+
+function showMsg(id, text, type) {
+  const el = document.getElementById(id);
+  el.className = 'msg show msg-' + type;
+  el.textContent = text;
+}
+
+// ─── Step 1: 配置 ───
+async function saveConfig() {
+  const data = {
+    year: document.getElementById('year').value,
+    semester: document.getElementById('semester').value,
+    week1_monday: document.getElementById('week1_monday').value,
+    network_mode: document.getElementById('network_mode').value,
+  };
+  const r = await fetch('/api/save-config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  const res = await r.json();
+  showMsg('msg-config', res.message, res.ok ? 'success' : 'error');
+  if (res.ok) refreshStatus();
+}
+
+// ─── Step 2: 登录 ───
+async function saveCredentials() {
+  const data = {
+    username: document.getElementById('username').value,
+    password: document.getElementById('password').value,
+  };
+  const r = await fetch('/api/save-credentials', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  const res = await r.json();
+  showMsg('msg-login', res.message, res.ok ? 'success' : 'error');
+  if (res.ok) refreshStatus();
+}
+
+async function getCaptcha() {
+  const btn = document.getElementById('btn-captcha');
+  btn.disabled = true;
+  showMsg('msg-login', '正在获取验证码…', 'info');
+  try {
+    const r = await fetch('/api/begin-captcha', { method: 'POST' });
+    const res = await r.json();
+    if (res.ok) {
+      document.getElementById('captcha-area').style.display = 'flex';
+      document.getElementById('captcha-img').src = '/api/captcha-image?' + Date.now();
+      showMsg('msg-login', '验证码已获取，请输入', 'info');
+    } else {
+      showMsg('msg-login', res.message, 'error');
+    }
+  } catch(e) {
+    showMsg('msg-login', '请求失败: ' + e, 'error');
+  }
+  btn.disabled = false;
+}
+
+async function submitCaptcha() {
+  const code = document.getElementById('captcha-code').value;
+  showMsg('msg-login', '正在提交验证码…', 'info');
+  const r = await fetch('/api/submit-captcha', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ code }),
+  });
+  const res = await r.json();
+  showMsg('msg-login', res.message, res.ok ? 'success' : 'error');
+  if (res.ok) {
+    document.getElementById('captcha-area').style.display = 'none';
+    refreshStatus();
+  }
+}
+
+async function setManualToken() {
+  const token = document.getElementById('manual-token').value;
+  const r = await fetch('/api/set-token', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ token }),
+  });
+  const res = await r.json();
+  showMsg('msg-login', res.message, res.ok ? 'success' : 'error');
+  if (res.ok) refreshStatus();
+}
+
+// ─── Step 3: 抓取 ───
+async function fetchTimetable(allWeeks) {
+  const btn = allWeeks ? document.getElementById('btn-fetch-all') : document.getElementById('btn-fetch-week');
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.innerHTML = '<span class="loading spinner-dark"></span> 抓取中…';
+  showMsg('msg-fetch', '正在抓取课表，请稍候…', 'info');
+  try {
+    const r = await fetch('/api/fetch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ all_weeks: allWeeks }),
+    });
+    const res = await r.json();
+    if (res.ok) {
+      let msg = `✅ 成功！共 ${res.total_courses} 条课程`;
+      if (res.failures.length) msg += `，${res.failures.length} 周失败`;
+      showMsg('msg-fetch', msg, 'success');
+      loadTimetable();
+    } else {
+      showMsg('msg-fetch', res.message, 'error');
+    }
+  } catch(e) {
+    showMsg('msg-fetch', '请求失败: ' + e, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = origText;
+}
+
+async function fetchSpecificWeek() {
+  const week = document.getElementById('specific-week').value;
+  if (!week || isNaN(week) || week < 1 || week > 20) {
+    showMsg('msg-fetch', '请输入 1-20 的周数', 'error');
+    return;
+  }
+  const btn = event.target;
+  btn.disabled = true;
+  showMsg('msg-fetch', `正在抓取第 ${week} 周…`, 'info');
+  try {
+    const r = await fetch('/api/fetch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ week: parseInt(week) }),
+    });
+    const res = await r.json();
+    if (res.ok) {
+      showMsg('msg-fetch', `✅ 第 ${week} 周抓取成功，${res.total_courses} 条课程`, 'success');
+      loadTimetable();
+    } else {
+      showMsg('msg-fetch', res.message, 'error');
+    }
+  } catch(e) {
+    showMsg('msg-fetch', '请求失败: ' + e, 'error');
+  }
+  btn.disabled = false;
+}
+
+async function fetchAndExport() {
+  const btn = document.getElementById('btn-export-all');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading spinner-dark"></span> 抓取并导出…';
+  showMsg('msg-fetch', '正在抓取全学期课表，请稍候…', 'info');
+  try {
+    const r = await fetch('/api/fetch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ all_weeks: true }),
+    });
+    const res = await r.json();
+    if (res.ok) {
+      showMsg('msg-fetch', `✅ 抓取完成，共 ${res.total_courses} 条课程，正在下载…`, 'success');
+      loadTimetable();
+      setTimeout(() => { window.location.href = '/api/download'; }, 500);
+    } else {
+      showMsg('msg-fetch', res.message, 'error');
+    }
+  } catch(e) {
+    showMsg('msg-fetch', '请求失败: ' + e, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '📦 一键导出整学期 JSON';
+}
+
+// ─── Step 4: 结果展示 ───
+let timetableData = {};
+let currentWeek = null;
+
+async function loadTimetable() {
+  try {
+    const r = await fetch('/api/timetable');
+    const res = await r.json();
+    if (!res.ok) return;
+
+    timetableData = res.timetable;
+    document.getElementById('btn-download').style.display = 'block';
+
+    const weeks = res.weeks;
+    const tabs = document.getElementById('week-tabs');
+    tabs.innerHTML = '';
+    weeks.forEach((w, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'week-tab' + (i === 0 ? ' active' : '');
+      btn.textContent = `第 ${w} 周`;
+      btn.onclick = () => selectWeek(w, btn);
+      tabs.appendChild(btn);
+    });
+
+    if (weeks.length > 0) {
+      selectWeek(weeks[0], tabs.children[0]);
+    }
+  } catch(e) {
+    console.error('Load timetable failed:', e);
+  }
+}
+
+function selectWeek(week, btn) {
+  currentWeek = week;
+  document.querySelectorAll('.week-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  const courses = timetableData[week] || [];
+  const tbody = document.getElementById('timetable-body');
+  const table = document.getElementById('timetable-table');
+  const empty = document.getElementById('empty-state');
+
+  if (courses.length === 0) {
+    table.style.display = 'none';
+    empty.style.display = 'block';
+    empty.textContent = `第 ${week} 周无课程数据`;
+    return;
+  }
+
+  empty.style.display = 'none';
+  table.style.display = 'table';
+  tbody.innerHTML = '';
+
+  courses.forEach(c => {
+    const tr = document.createElement('tr');
+    const name = c.courseName || c.kcmc || c.name || '-';
+    const date = c.courseDate || '-';
+    const section = c.whichSection || c.jcs || c.section || '-';
+    const room = c.classroomName || c.classroom || c.room || c.jxdd || '-';
+    const teacher = c.teacher || c.teacherName || c.xm || '-';
+    tr.innerHTML = `<td>${date}</td><td>${name}</td><td>第${section}节</td><td>${room}</td><td>${teacher}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function downloadJSON() {
+  window.location.href = '/api/download';
+}
+
+// ─── 初始化 ───
+refreshStatus();
+loadTimetable();
+</script>
+</body>
+</html>

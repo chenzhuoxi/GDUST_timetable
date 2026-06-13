@@ -1,0 +1,7 @@
+config.json
+secrets.json
+captcha.jpg
+timetable.json
+__pycache__/
+*.pyc
+.DS_Store

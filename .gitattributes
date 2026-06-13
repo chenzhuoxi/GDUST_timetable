@@ -1,0 +1,3 @@
+# Ensure .bat files get CRLF line endings on Windows checkout
+*.bat text eol=crlf
+*.sh  text eol=lf
