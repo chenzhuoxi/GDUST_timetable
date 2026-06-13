@@ -649,8 +649,10 @@ function startWechatLogin() {
 
 // 监听来自 CAS 回调页面的 postMessage（TGC）
 window.addEventListener('message', function(event) {
-  // 接收 TGC 字符串
-  if (typeof event.data !== 'string' || event.data.length < 10) return;
+  // 过滤：只接受长字符串（TGC），忽略 JSON 状态消息
+  if (typeof event.data !== 'string') return;
+  try { JSON.parse(event.data); return; } catch(e) { /* 不是 JSON，继续 */ }
+  if (event.data.length < 20) return;
 
   const tgc = event.data;
   console.log('[WeChat Login] Received TGC, length:', tgc.length);
