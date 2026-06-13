@@ -26,6 +26,7 @@ from gdust_timetable import (
     CAPTCHA_PATH,
     CAS_API,
     DEFAULT_OUTPUT,
+    DEFAULT_USER_AGENT,
     fetch_week,
     load_config,
     load_secret,
@@ -97,72 +98,84 @@ def _subscribe_sse(session_id: str, config: dict, secret: dict):
     import requests as sse_requests
     s = sse_requests.Session()
     s.headers.update({
-        "User-Agent": config.get("user_agent") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": config.get("user_agent") or DEFAULT_USER_AGENT,
         "Referer": "https://cas.gdust.edu.cn/cas/",
         "Origin": "https://cas.gdust.edu.cn",
     })
     try:
-        resp = s.get(f"{CAS_API}/sse/subscribe", stream=True, timeout=90)
+        resp = s.get(f"{CAS_API}/sse/subscribe", stream=True, timeout=120)
         resp.raise_for_status()
+        current_event = None
+        data_buffer: list[str] = []
         for line in resp.iter_lines(decode_unicode=True):
-            if not line:
+            if line is None:
                 continue
-            # SSE 格式: "event: XXX" 或 "data: XXX"
+            if line == "" or line.startswith(":"):
+                # 空行 = 事件结束，处理积攒的 data
+                if data_buffer and current_event:
+                    data_str = "\n".join(data_buffer)
+                    _handle_sse_event(session_id, current_event, data_str, secret, config)
+                data_buffer = []
+                continue
             if line.startswith("event:"):
-                with _scan_lock:
-                    if session_id in _scan_sessions:
-                        _scan_sessions[session_id]["last_event"] = line.split(":", 1)[1].strip()
+                current_event = line[6:].strip()
             elif line.startswith("data:"):
-                data = line.split(":", 1)[1].strip()
-                evt = ""
-                with _scan_lock:
-                    if session_id in _scan_sessions:
-                        evt = _scan_sessions[session_id].get("last_event", "")
-
-                if evt == "HELLO":
-                    # clientId
-                    with _scan_lock:
-                        if session_id in _scan_sessions:
-                            _scan_sessions[session_id]["client_id"] = data
-                            _scan_sessions[session_id]["status"] = "waiting_scan"
-                elif evt == "SUCCESS":
-                    # 扫码成功
-                    with _scan_lock:
-                        if session_id in _scan_sessions:
-                            _scan_sessions[session_id]["status"] = "scanned"
-                elif evt == "LOGIN_SUCCESS_TOKEN":
-                    # 登录成功（token 态）
-                    with _scan_lock:
-                        if session_id in _scan_sessions:
-                            _scan_sessions[session_id]["status"] = "login_success"
-                elif evt == "LOGIN_SUCCESS_TICKET":
-                    # 拿到 CASTGC（TGC）
-                    with _scan_lock:
-                        if session_id in _scan_sessions:
-                            _scan_sessions[session_id]["status"] = "success"
-                            _scan_sessions[session_id]["tgc"] = data
-                    # 自动换 TOKEN
-                    with _operation_lock:
-                        try:
-                            token = exchange_castgc_for_token(secret, config, data)
-                            with _scan_lock:
-                                if session_id in _scan_sessions:
-                                    _scan_sessions[session_id]["token"] = token
-                        except Exception as e:
-                            with _scan_lock:
-                                if session_id in _scan_sessions:
-                                    _scan_sessions[session_id]["token_error"] = str(e)
-                elif evt == "NEED_TO_BIND":
-                    # 需要钉钉绑定
-                    with _scan_lock:
-                        if session_id in _scan_sessions:
-                            _scan_sessions[session_id]["status"] = "need_bind"
-                            _scan_sessions[session_id]["union_id"] = data
+                data_buffer.append(line[5:].strip())
+            elif ":" in line:
+                key, value = line.split(":", 1)
+                if key.strip().lower() == "event":
+                    current_event = value.strip()
+                elif key.strip().lower() == "data":
+                    data_buffer.append(value.strip())
     except Exception as e:
         with _scan_lock:
             if session_id in _scan_sessions:
                 _scan_sessions[session_id]["status"] = "error"
                 _scan_sessions[session_id]["error"] = str(e)
+
+
+def _handle_sse_event(session_id: str, evt: str, data: str, secret: dict, config: dict):
+    """处理单个 SSE 事件。"""
+    if evt == "HELLO":
+        with _scan_lock:
+            if session_id in _scan_sessions:
+                _scan_sessions[session_id]["client_id"] = data
+                _scan_sessions[session_id]["status"] = "waiting_scan"
+    elif evt == "SUCCESS":
+        with _scan_lock:
+            if session_id in _scan_sessions:
+                _scan_sessions[session_id]["status"] = "scanned"
+    elif evt == "LOGIN_SUCCESS_TOKEN":
+        with _scan_lock:
+            if session_id in _scan_sessions:
+                _scan_sessions[session_id]["status"] = "confirming"
+    elif evt == "LOGIN_SUCCESS_TICKET":
+        # 拿到 CASTGC，先换 TOKEN 再设状态（避免竞态）
+        print(f"[SSE] LOGIN_SUCCESS_TICKET, data length={len(data)}", flush=True)
+        tgc = data
+        token = None
+        token_error = None
+        with _operation_lock:
+            try:
+                token = exchange_castgc_for_token(secret, config, tgc)
+                print(f"[SSE] Token exchange OK", flush=True)
+            except Exception as e:
+                token_error = str(e)
+                print(f"[SSE] Token exchange failed: {e}", flush=True)
+        # token 换完再设 success
+        with _scan_lock:
+            if session_id in _scan_sessions:
+                _scan_sessions[session_id]["status"] = "success"
+                _scan_sessions[session_id]["tgc"] = tgc
+                if token:
+                    _scan_sessions[session_id]["token"] = token
+                if token_error:
+                    _scan_sessions[session_id]["token_error"] = token_error
+    elif evt == "NEED_TO_BIND":
+        with _scan_lock:
+            if session_id in _scan_sessions:
+                _scan_sessions[session_id]["status"] = "need_bind"
+                _scan_sessions[session_id]["union_id"] = data
 
 
 # ──────────────────────────── 页面路由 ────────────────────────────
@@ -357,7 +370,9 @@ def api_scan_login_check(session_id: str):
             err = ses.pop("token_error")
             return jsonify({"ok": True, "status": "success", "message": "扫码成功，但换 TOKEN 失败", "error": err})
         if status == "success":
-            return jsonify({"ok": True, "status": "scanned", "message": "扫码成功，正在获取 TOKEN..."})
+            return jsonify({"ok": True, "status": "success", "message": "扫码成功，正在换 TOKEN...", "waiting_token": True})
+        if status == "confirming":
+            return jsonify({"ok": True, "status": "confirming", "message": "✅ 正在确认身份..."})
         if status == "need_bind":
             bind_url = f"https://cas.gdust.edu.cn/cas/mobieDDBind?clientId={ses['client_id']}&unionID={ses.get('union_id', '')}"
             return jsonify({"ok": True, "status": "need_bind", "message": "需要绑定钉钉账号", "bind_url": bind_url})
@@ -367,7 +382,7 @@ def api_scan_login_check(session_id: str):
         if status == "waiting_scan":
             return jsonify({"ok": True, "status": "waiting_scan", "message": "等待扫码..."})
         if status == "scanned":
-            return jsonify({"ok": True, "status": "scanned", "message": "已扫码，正在确认..."})
+            return jsonify({"ok": True, "status": "scanned", "message": "✅ 已扫码，正在确认..."})
         return jsonify({"ok": True, "status": status, "message": f"当前状态: {status}"})
 
 

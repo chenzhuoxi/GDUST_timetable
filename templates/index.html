@@ -721,9 +721,17 @@ function checkScanStatus() {
       if (res.status === 'success') {
         clearInterval(_scanPollTimer);
         _scanPollTimer = null;
-        showMsg('msg-scan', res.message, 'success');
-        document.getElementById('btn-scan-login').style.display = 'block';
-        refreshStatus();
+        if (res.waiting_token) {
+          showMsg('msg-scan', '✅ ' + res.message, 'info');
+          // 还没换完 TOKEN，继续轮询
+          _scanPollTimer = setInterval(checkScanStatus, 1000);
+        } else {
+          showMsg('msg-scan', res.message, 'success');
+          document.getElementById('btn-scan-login').style.display = 'block';
+          refreshStatus();
+        }
+      } else if (res.status === 'confirming') {
+        showMsg('msg-scan', res.message, 'info');
       } else if (res.status === 'need_bind') {
         // 需要钉钉绑定，显示绑定二维码
         showMsg('msg-scan', '⚠️ 需要钉钉扫码绑定。正在生成绑定二维码...', 'info');
