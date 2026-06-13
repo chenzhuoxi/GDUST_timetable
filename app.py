@@ -197,7 +197,9 @@ def _handle_sse_event(session_id: str, evt: str, data: str, secret: dict, config
                 SECRET_PATH.write_text(json.dumps(cur, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 # 验证写入
                 verify = json.loads(SECRET_PATH.read_text(encoding="utf-8"))
-                print(f"[SSE] Token saved to {SECRET_PATH}, verified token={verify.get('portal_token', '')[:30]}...", flush=True)
+                print(f"[SSE] Token saved to {SECRET_PATH}", flush=True)
+                print(f"[SSE] Verified: portal_token={verify.get('portal_token', '')[:30]}... username={verify.get('username')}", flush=True)
+                print(f"[SSE] File size: {SECRET_PATH.stat().st_size} bytes", flush=True)
             except Exception as e:
                 token_error = str(e)
                 print(f"[SSE] Token exchange failed: {e}", flush=True)
