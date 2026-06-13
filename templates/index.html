@@ -718,6 +718,7 @@ function checkScanStatus() {
   fetch('/api/scan-login/check/' + _scanSessionId)
     .then(r => r.json())
     .then(res => {
+      console.log('[Scan Check]', res.status, res);
       if (res.status === 'success') {
         clearInterval(_scanPollTimer);
         _scanPollTimer = null;
