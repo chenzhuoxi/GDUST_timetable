@@ -27,6 +27,7 @@ from gdust_timetable import (
     CAS_API,
     DEFAULT_OUTPUT,
     DEFAULT_USER_AGENT,
+    WEBVPN_BASE,
     fetch_week,
     load_config,
     load_secret,
@@ -96,14 +97,33 @@ def _check_token() -> tuple[bool, str]:
 def _subscribe_sse(session_id: str, config: dict, secret: dict):
     """后台线程：连接 CAS SSE，监听扫码状态。"""
     import requests as sse_requests
+    mode = config.get("network_mode", "webvpn")
+    if mode == "webvpn":
+        # WebVPN 模式：需要先拿到 VPN cookies
+        vpn_s = sse_requests.Session()
+        vpn_s.headers.update({"User-Agent": DEFAULT_USER_AGENT})
+        vpn_s.get(f"{WEBVPN_BASE}/", allow_redirects=True, timeout=15)
+        vpn_cookies = {}
+        for c in vpn_s.cookies:
+            if "webvpn" in c.domain:
+                vpn_cookies[c.name] = c.value
+        cas_base = f"{WEBVPN_BASE}/https/6361732e67647573742e6564752e636e"
+    else:
+        cas_base = "https://cas.gdust.edu.cn"
+        vpn_cookies = {}
+
     s = sse_requests.Session()
     s.headers.update({
-        "User-Agent": config.get("user_agent") or DEFAULT_USER_AGENT,
-        "Referer": "https://cas.gdust.edu.cn/cas/",
-        "Origin": "https://cas.gdust.edu.cn",
+        "User-Agent": DEFAULT_USER_AGENT,
+        "Referer": f"{cas_base}/cas/",
+        "Origin": cas_base,
     })
+    if vpn_cookies:
+        for k, v in vpn_cookies.items():
+            s.cookies.set(k, v)
     try:
-        resp = s.get(f"{CAS_API}/sse/subscribe", stream=True, timeout=120)
+        sse_url = f"{cas_base}/cas-api/sse/subscribe"
+        resp = s.get(sse_url, stream=True, timeout=120)
         resp.raise_for_status()
         current_event = None
         data_buffer: list[str] = []
@@ -341,7 +361,12 @@ def api_scan_login_start():
         with _scan_lock:
             ses = _scan_sessions.get(session_id)
             if ses and ses.get("client_id"):
-                qr_url = f"https://cas.gdust.edu.cn/cas/mobieAuth?clientId={ses['client_id']}"
+                mode = config.get("network_mode", "webvpn")
+                if mode == "webvpn":
+                    cas_mobie = f"{WEBVPN_BASE}/https/6361732e67647573742e6564752e636e/cas/mobieAuth"
+                else:
+                    cas_mobie = "https://cas.gdust.edu.cn/cas/mobieAuth"
+                qr_url = f"{cas_mobie}?clientId={ses['client_id']}"
                 return jsonify({
                     "ok": True,
                     "session_id": session_id,
