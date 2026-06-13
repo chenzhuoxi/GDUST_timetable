@@ -202,6 +202,22 @@ def api_set_token():
     return jsonify({"ok": True, "message": "TOKEN 已设置"})
 
 
+@app.route("/api/wechat-login", methods=["POST"])
+def api_wechat_login():
+    """用微信扫码拿到的 TGC 换取 portal TOKEN。"""
+    with _operation_lock:
+        castgc = request.json.get("castgc", "").strip()
+        if not castgc:
+            return jsonify({"ok": False, "message": "未收到 TGC"})
+        try:
+            secret = load_secret()
+            config = load_config()
+            token = exchange_castgc_for_token(secret, config, castgc)
+            return jsonify({"ok": True, "message": f"微信登录成功！TOKEN: {token[:16]}..."})
+        except Exception as e:
+            return jsonify({"ok": False, "message": f"登录失败: {e}"})
+
+
 @app.route("/api/fetch", methods=["POST"])
 def api_fetch():
     """抓取课表。"""

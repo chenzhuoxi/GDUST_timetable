@@ -269,6 +269,23 @@
     <button class="btn-primary" onclick="saveCredentials()">💾 保存账号密码</button>
   </div>
 
+  <!-- 微信扫码登录 -->
+  <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+    <label>微信扫码登录（推荐）</label>
+    <div id="wechat-login-area" style="margin-top:8px;">
+      <div id="wechat-qr-wrapper" style="display:none; position:relative; width:300px; height:400px; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin:8px auto;">
+        <iframe id="wechat-iframe" src="" style="width:100%; height:100%; border:none;"></iframe>
+        <div id="wechat-overlay" style="display:none; position:absolute; inset:0; background:rgba(255,255,255,0.95); display:flex; align-items:center; justify-content:center; flex-direction:column;">
+          <div style="font-size:32px;">✅</div>
+          <div style="margin-top:8px; font-weight:bold; color:var(--success);">登录成功！</div>
+        </div>
+      </div>
+      <button class="btn-outline" onclick="startWechatLogin()" id="btn-wechat" style="width:100%;">📱 打开微信扫码</button>
+      <div style="font-size:12px; color:var(--text-secondary); margin-top:4px; text-align:center;">用手机微信扫描二维码登录，无需输入账号密码</div>
+    </div>
+    <div class="msg" id="msg-wechat"></div>
+  </div>
+
   <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
     <label>手动验证码登录</label>
     <div class="captcha-area" id="captcha-area" style="display:none;">
@@ -607,6 +624,58 @@ function selectWeek(week, btn) {
 function downloadJSON() {
   window.location.href = '/api/download';
 }
+
+// ─── 微信扫码登录 ───
+function startWechatLogin() {
+  const wrapper = document.getElementById('wechat-qr-wrapper');
+  const iframe = document.getElementById('wechat-iframe');
+  const btn = document.getElementById('btn-wechat');
+  const overlay = document.getElementById('wechat-overlay');
+
+  // 显示 iframe，隐藏按钮
+  wrapper.style.display = 'block';
+  btn.style.display = 'none';
+  overlay.style.display = 'none';
+
+  // 加载 CAS 登录页面（会自动显示微信二维码标签）
+  iframe.src = 'https://cas.gdust.edu.cn/cas/';
+
+  showMsg('msg-wechat', '请在二维码区域用微信扫码登录...', 'info');
+}
+
+// 监听来自 CAS 页面的 postMessage（TGC）
+window.addEventListener('message', function(event) {
+  // 安全检查：只接受来自 CAS 域的消息
+  if (typeof event.data !== 'string' || event.data.length < 10) return;
+
+  // TGC 是一个较长的字符串，可能是 base64 或 hex 编码
+  const tgc = event.data;
+
+  showMsg('msg-wechat', '收到登录凭证，正在验证...', 'info');
+
+  // 显示成功遮罩
+  const overlay = document.getElementById('wechat-overlay');
+  if (overlay) overlay.style.display = 'flex';
+
+  // 发送给 Flask 后端换取 TOKEN
+  fetch('/api/wechat-login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({castgc: tgc}),
+  })
+  .then(r => r.json())
+  .then(res => {
+    if (res.ok) {
+      showMsg('msg-wechat', res.message, 'success');
+      refreshStatus();
+    } else {
+      showMsg('msg-wechat', res.message, 'error');
+    }
+  })
+  .catch(e => {
+    showMsg('msg-wechat', '请求失败: ' + e, 'error');
+  });
+});
 
 // ─── 初始化 ───
 refreshStatus();
