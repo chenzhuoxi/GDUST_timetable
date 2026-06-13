@@ -190,11 +190,14 @@ def _handle_sse_event(session_id: str, evt: str, data: str, secret: dict, config
                 token = exchange_castgc_for_token(secret, config, tgc)
                 # 持久化 TOKEN 到 secrets.json
                 from gdust_timetable import SECRET_PATH
-                new_secret = dict(load_secret())
-                new_secret["portal_token"] = token
-                new_secret["updated_at"] = int(time.time())
-                save_secret(new_secret)
-                print(f"[SSE] Token exchange OK, saved to {SECRET_PATH}", flush=True)
+                cur = load_secret()
+                cur["portal_token"] = token
+                cur["updated_at"] = int(time.time())
+                SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
+                SECRET_PATH.write_text(json.dumps(cur, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                # 验证写入
+                verify = json.loads(SECRET_PATH.read_text(encoding="utf-8"))
+                print(f"[SSE] Token saved to {SECRET_PATH}, verified token={verify.get('portal_token', '')[:30]}...", flush=True)
             except Exception as e:
                 token_error = str(e)
                 print(f"[SSE] Token exchange failed: {e}", flush=True)
