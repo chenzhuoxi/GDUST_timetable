@@ -25,28 +25,16 @@ echo [OK] Python %PY_VER%
 set PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 set PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 
-:: Install dependencies
+:: Install all dependencies at once (fast with mirror)
 echo.
 echo [INFO] Checking dependencies...
-python -c "import flask" >nul 2>&1
+pip install -r requirements.txt -i %PIP_INDEX% --trusted-host %PIP_TRUSTED_HOST% -q 2>nul
 if %errorlevel% neq 0 (
-    echo [INFO] Installing flask...
-    pip install flask -i %PIP_INDEX% --trusted-host %PIP_TRUSTED_HOST% -q
-    if %errorlevel% neq 0 (
-        echo [WARN] flask install failed, trying default source...
-        pip install flask -q
-    )
+    echo [WARN] Mirror install failed, trying default source...
+    pip install -r requirements.txt -q 2>nul
 )
-python -c "import requests" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [INFO] Installing requests...
-    pip install requests -i %PIP_INDEX% --trusted-host %PIP_TRUSTED_HOST% -q
-)
-python -c "import zoneinfo; zoneinfo.ZoneInfo('Asia/Shanghai')" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [INFO] Installing tzdata (Windows timezone data)...
-    pip install tzdata -i %PIP_INDEX% --trusted-host %PIP_TRUSTED_HOST% -q
-)
+
+:: Check optional ddddocr
 python -c "import ddddocr" >nul 2>&1
 if %errorlevel% equ 0 (
     echo [OK] ddddocr installed (auto captcha available)
