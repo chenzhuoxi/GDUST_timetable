@@ -126,12 +126,17 @@ def _subscribe_sse(session_id: str, config: dict, secret: dict):
                             _scan_sessions[session_id]["client_id"] = data
                             _scan_sessions[session_id]["status"] = "waiting_scan"
                 elif evt == "SUCCESS":
-                    # 扫码成功，等 STGC
+                    # 扫码成功
                     with _scan_lock:
                         if session_id in _scan_sessions:
                             _scan_sessions[session_id]["status"] = "scanned"
-                elif evt == "STGC":
-                    # 拿到 TGC！
+                elif evt == "LOGIN_SUCCESS_TOKEN":
+                    # 登录成功（token 态）
+                    with _scan_lock:
+                        if session_id in _scan_sessions:
+                            _scan_sessions[session_id]["status"] = "login_success"
+                elif evt == "LOGIN_SUCCESS_TICKET":
+                    # 拿到 CASTGC（TGC）
                     with _scan_lock:
                         if session_id in _scan_sessions:
                             _scan_sessions[session_id]["status"] = "success"
