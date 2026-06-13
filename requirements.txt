@@ -1,3 +1,4 @@
 requests>=2.28
+tzdata>=2023.3    # Windows 时区数据（macOS/Linux 不需要）
 ddddocr>=1.4   # 可选：自动验证码识别
 flask>=3.0     # Web GUI

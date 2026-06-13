@@ -42,6 +42,11 @@ if %errorlevel% neq 0 (
     echo [INFO] Installing requests...
     pip install requests -i %PIP_INDEX% --trusted-host %PIP_TRUSTED_HOST% -q
 )
+python -c "import zoneinfo; zoneinfo.ZoneInfo('Asia/Shanghai')" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [INFO] Installing tzdata (Windows timezone data)...
+    pip install tzdata -i %PIP_INDEX% --trusted-host %PIP_TRUSTED_HOST% -q
+)
 python -c "import ddddocr" >nul 2>&1
 if %errorlevel% equ 0 (
     echo [OK] ddddocr installed (auto captcha available)
