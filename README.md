@@ -95,7 +95,7 @@ cp config.example.json config.json
 
 ```json
 {
-  "job_number": "2025303040317",   ← 你的学号
+  "job_number": "202xxxxxxxxxx",   ← 你的学号
   "week1_monday": "2026-03-09",    ← 本学期第一周的周一日期
   "network_mode": "campus"         ← campus=校内直连，webvpn=校外代理
 }
