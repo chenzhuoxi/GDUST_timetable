@@ -24,6 +24,7 @@ from flask import Flask, jsonify, render_template, request, send_file, url_for
 sys.path.insert(0, str(Path(__file__).parent))
 from gdust_timetable import (
     CAPTCHA_PATH,
+    CAS_API,
     DEFAULT_OUTPUT,
     fetch_week,
     load_config,
