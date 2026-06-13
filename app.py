@@ -169,11 +169,16 @@ def _handle_sse_event(session_id: str, evt: str, data: str, secret: dict, config
     elif evt == "SUCCESS":
         with _scan_lock:
             if session_id in _scan_sessions:
-                _scan_sessions[session_id]["status"] = "scanned"
+                cur = _scan_sessions[session_id].get("status")
+                # TICKET 先于 SUCCESS 到达时，success 状态不被覆盖
+                if cur != "success":
+                    _scan_sessions[session_id]["status"] = "scanned"
     elif evt == "LOGIN_SUCCESS_TOKEN":
         with _scan_lock:
             if session_id in _scan_sessions:
-                _scan_sessions[session_id]["status"] = "confirming"
+                cur = _scan_sessions[session_id].get("status")
+                if cur != "success":
+                    _scan_sessions[session_id]["status"] = "confirming"
     elif evt == "LOGIN_SUCCESS_TICKET":
         # 拿到 CASTGC，先换 TOKEN 再设状态（避免竞态）
         print(f"[SSE] LOGIN_SUCCESS_TICKET, data length={len(data)}", flush=True)
